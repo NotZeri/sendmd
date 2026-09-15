@@ -1,0 +1,986 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>sendmd — markdown editor with a discord preview</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231b1d21'/%3E%3Ctext x='16' y='23' font-family='monospace' font-size='20' font-weight='700' text-anchor='middle' fill='%233ba55d'%3E%23%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#151619; --panel:#1b1d21; --panel2:#222429; --line:#2b2e35;
+  --text:#d6d9df; --muted:#8b929e; --faint:#5d6370;
+  --blurple:#5865f2; --green:#3ba55d; --red:#ed4245; --amber:#faa61a;
+  --chat:#313338; --chat-panel:#2b2d31; --chat-text:#dbdee1;
+  --mono:'JetBrains Mono',ui-monospace,Menlo,monospace;
+  --sans:'IBM Plex Sans',sans-serif;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 var(--sans);display:flex;flex-direction:column;overflow:hidden}
+::selection{background:rgba(88,101,242,.35)}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:#2e3138;border-radius:5px;border:2px solid var(--bg)}
+::-webkit-scrollbar-thumb:hover{background:#3a3e47}
+button{cursor:pointer;font-family:inherit}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:1px solid #6a7180;outline-offset:1px}
+
+.top{display:flex;align-items:baseline;gap:12px;padding:10px 16px;border-bottom:1px solid var(--line);flex:none}
+.brand{font:700 15px var(--mono)}
+.brand .tick{color:var(--green);margin-right:3px}
+.brand .ver{color:var(--faint);font:500 11px var(--mono);margin-left:6px}
+.sub{font-size:12px;color:var(--muted)}
+.top-right{margin-left:auto;display:flex;gap:14px;align-items:center;font:11px var(--mono);color:var(--faint)}
+#savedFlag{opacity:0;transition:opacity .4s;color:var(--green)}
+#savedFlag.show{opacity:1}
+
+// panes
+main{flex:1;display:flex;min-height:0}
+.pane{display:flex;flex-direction:column;min-width:0;min-height:0}
+.editor{flex:0 0 46%;border-right:1px solid var(--line)}
+.divider{flex:none;width:5px;cursor:col-resize;background:transparent;transition:background .15s}
+.divider:hover,.divider.active{background:var(--line)}
+
+.toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:2px;padding:5px 8px;border-bottom:1px solid var(--line)}
+.toolbar button{font:500 12px var(--mono);color:var(--muted);background:none;border:1px solid transparent;border-radius:3px;padding:4px 8px;transition:background .12s,color .12s}
+.toolbar button:hover{color:var(--text);background:var(--panel2)}
+.toolbar .sep{width:1px;align-self:stretch;background:var(--line);margin:3px 4px}
+
+#input{flex:1;width:100%;resize:none;border:0;outline:0;background:transparent;color:var(--text);font:13.5px/1.65 var(--mono);padding:14px 16px;caret-color:var(--blurple)}
+#input::placeholder{color:var(--faint)}
+.statusbar{display:flex;justify-content:space-between;gap:16px;padding:5px 12px;border-top:1px solid var(--line);font:11px var(--mono);color:var(--faint);flex:none}
+#limit.warn{color:var(--amber)}
+#limit.over{color:var(--red)}
+
+.pane-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:6px 10px;border-bottom:1px solid var(--line);flex:none}
+.tabs,.subtabs{display:flex;border:1px solid var(--line);border-radius:4px;overflow:hidden}
+.tab{font:500 12px var(--mono);padding:4px 12px;background:transparent;border:0;color:var(--muted);transition:background .12s,color .12s}
+.subtabs .tab{font-size:11px;padding:3px 10px}
+.tab.on{background:var(--panel2);color:var(--text)}
+.ghost{font:500 11.5px var(--mono);color:var(--muted);background:none;border:1px solid var(--line);border-radius:4px;padding:4px 10px;transition:border-color .12s,color .12s}
+.ghost:hover{color:var(--text);border-color:#3d424c}
+#jsonBtn{margin-left:auto}
+.preview-scroll{flex:1;overflow-y:auto;min-height:0}
+
+// MD output
+.md{max-width:720px;padding:26px 32px 60px;font:15px/1.65 var(--sans)}
+.md h1{font:600 25px/1.25 var(--sans);margin:26px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+.md h2{font:600 19px/1.3 var(--sans);margin:24px 0 8px}
+.md h3{font:600 16px/1.3 var(--sans);margin:20px 0 6px}
+.md h4,.md h5,.md h6{font:600 14px/1.3 var(--sans);margin:16px 0 4px}
+.md>:first-child{margin-top:0}
+.md p{margin:0 0 12px}
+.md a{color:#8b93f8}
+.md code{font:12.5px var(--mono);background:var(--panel2);border:1px solid var(--line);border-radius:3px;padding:1px 5px}
+.md pre{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:12px 14px;overflow-x:auto;margin:0 0 12px}
+.md pre code{background:none;border:0;padding:0}
+.md blockquote{margin:0 0 12px;padding:2px 14px;border-left:3px solid var(--faint);color:var(--muted)}
+.md ul,.md ol{margin:0 0 12px;padding-left:22px}
+.md li{margin:3px 0}
+.md hr{border:0;border-top:1px solid var(--line);margin:20px 0}
+.md img{max-width:100%;border-radius:4px}
+
+// DC preview
+.notice{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:12px 16px 0;padding:8px 12px;background:rgba(237,66,69,.08);border:1px solid rgba(237,66,69,.35);border-radius:4px;font:13px var(--sans);color:#f0908f}
+.notice button{font:500 11.5px var(--mono);color:#f0908f;background:none;border:1px solid rgba(240,113,111,.5);border-radius:3px;padding:3px 9px}
+.notice button:hover{background:rgba(240,113,111,.12)}
+.chan{display:flex;align-items:baseline;gap:8px;margin-top:12px;padding:10px 16px;background:var(--chat);border-bottom:1px solid rgba(255,255,255,.06);font:600 15px var(--sans);color:#f2f3f5}
+.chan .hash{color:var(--faint);font-weight:400}
+.chan-desc{font-size:12px;font-weight:400;color:#7d838d}
+.chat{background:var(--chat);padding:12px 16px 20px;min-height:160px}
+.msg{display:flex;gap:14px;padding:3px 2px;border-radius:4px}
+.msg:hover{background:rgba(0,0,0,.07)}
+.avatar{flex:none;width:40px;height:40px;border-radius:50%;display:grid;place-items:center;font:600 16px var(--sans);color:#fff;margin-top:2px;object-fit:cover}
+.msg-head{display:flex;align-items:baseline;gap:7px}
+.msg-name{font:500 15px var(--sans);color:#f2f3f5}
+.bot-tag{font:700 10px/1 var(--sans);background:var(--blurple);color:#fff;border-radius:3px;padding:2px 4px}
+.msg-time{font-size:11px;color:#949ba4}
+.msg-text{font:14px/1.45 var(--sans);color:var(--chat-text);margin-top:1px}
+.msg-empty{color:#7d838d;font-style:italic}
+
+.dmd p{margin:0 0 4px}
+.dmd>:last-child{margin-bottom:0}
+.dmd ul,.dmd ol{margin:0 0 4px;padding-left:20px}
+.dmd li{margin:2px 0}
+.dmd code{font:13px var(--mono);background:#232428;border-radius:3px;padding:1px 4px}
+.dmd pre{background:#232428;border:1px solid #1e1f22;border-radius:4px;padding:8px 10px;margin:4px 0;overflow-x:auto}
+.dmd pre code{background:none;padding:0}
+.dmd blockquote{margin:0 0 4px;padding:0 12px;border-left:4px solid #4e5058;color:#b5bac1}
+.dmd a{color:#00a8fc;text-decoration:none}
+.dmd a:hover{text-decoration:underline}
+
+.dl-blocked{margin:2px 0;color:var(--chat-text)}
+.dl-blocked .hashes{color:#f23f43;font-weight:600}
+.dl-blocked .flag{font:500 10px var(--mono);color:#f0716f;border:1px solid rgba(240,113,111,.45);border-radius:3px;padding:1px 5px;margin-left:8px;vertical-align:1px;cursor:help;user-select:none}
+.spoiler{background:#232428;color:transparent;border-radius:4px;cursor:pointer;transition:background .15s;user-select:none}
+.spoiler:hover{background:#33353a}
+.spoiler.open{background:#3d4046;color:inherit;user-select:auto}
+
+.embed{display:flex;gap:16px;background:var(--chat-panel);border-left:4px solid var(--blurple);border-radius:4px;margin-top:8px;max-width:520px;padding:12px 16px 12px 14px;font:14px/1.4 var(--sans);color:var(--chat-text)}
+.embed-main{min-width:0;flex:1}
+.embed-author{font:600 13px var(--sans);color:#f2f3f5;margin-bottom:4px}
+.embed-title{font:600 15.5px var(--sans);color:#f2f3f5;margin-bottom:4px}
+.embed-fields{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:8px}
+.ef{flex:1 1 100%;min-width:0}
+.ef.inline{flex:1 1 30%}
+.ef-name{font:600 14px var(--sans);color:#f2f3f5}
+.ef-value{color:var(--chat-text)}
+.embed-img{display:block;width:100%;max-height:280px;object-fit:cover;border-radius:4px;margin-top:10px}
+.embed-thumb{width:80px;height:80px;border-radius:4px;object-fit:cover;flex:none}
+.embed-foot{margin-top:10px;font-size:12px;color:#b5bac1}
+.embed-missing{border:1px dashed #43464e;border-radius:4px;margin-top:8px;max-width:420px;padding:14px 16px;color:#7d838d;font-style:italic;font-size:13px}
+
+// embed editor
+.builder{padding:14px 16px 48px;border-top:1px solid var(--line)}
+.builder-head,.fields-head{display:flex;justify-content:space-between;align-items:center;font:600 11px var(--mono);text-transform:uppercase;letter-spacing:.12em;color:var(--muted);margin-bottom:12px}
+.fields-head{margin-top:20px}
+.linky{background:none;border:0;font:500 11px var(--mono);color:var(--muted);text-transform:none;letter-spacing:0;text-decoration:underline dotted;padding:0}
+.linky:hover{color:var(--text)}
+.fgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px}
+.builder label,.modal-body label{display:flex;flex-direction:column;gap:5px;font:500 10px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+label.row{flex-direction:row;align-items:center;gap:8px;font-size:11.5px;text-transform:none;letter-spacing:0}
+.wide{grid-column:1/-1}
+.builder input:not([type=checkbox]):not([type=color]),
+.builder textarea,.modal-body input{
+  background:var(--panel);border:1px solid var(--line);border-radius:3px;color:var(--text);
+  font:13px/1.4 var(--sans);padding:6px 9px;width:100%;outline:none;transition:border-color .12s}
+.builder input:focus,.builder textarea:focus,.modal-body input:focus{border-color:#4b515d}
+.builder textarea{font:12.5px/1.55 var(--mono);resize:vertical;min-height:64px}
+input[type=color]{width:36px;height:26px;padding:2px;border:1px solid var(--line);border-radius:3px;background:var(--panel);cursor:pointer}
+.builder code{font:11px var(--mono);color:var(--muted)}
+.field-row{display:grid;grid-template-columns:1fr 1.7fr auto auto;gap:8px;align-items:center;margin-bottom:8px}
+.f-del{background:none;border:0;color:var(--faint);font:16px var(--mono);padding:2px 7px;border-radius:3px}
+.f-del:hover{color:var(--red)}
+.hint{font:12px var(--sans);color:var(--faint)}
+.hint.ok{color:var(--green)}
+.hint.err{color:var(--red)}
+
+// buttons and za modal
+.btn{font:500 12.5px var(--mono);background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:4px;padding:6px 14px;transition:border-color .12s}
+.btn:hover{border-color:#3d424c}
+.btn.primary{background:var(--blurple);border-color:var(--blurple);color:#fff}
+.btn.primary:hover{background:#4752c4}
+dialog{background:var(--panel);border:1px solid var(--line);border-radius:6px;color:var(--text);width:min(600px,94vw);padding:0}
+dialog::backdrop{background:rgba(10,11,13,.6)}
+.modal-head{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line);font:600 12px var(--mono);text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
+.modal-body{padding:14px 16px 18px;display:flex;flex-direction:column;gap:14px}
+#jsonOut{margin:0;background:#141519;border:1px solid var(--line);border-radius:4px;padding:12px 14px;font:12px/1.6 var(--mono);max-height:260px;overflow:auto;white-space:pre-wrap;word-break:break-word}
+.jk{color:#8b93f8}.js{color:#9ecb80}.jn{color:#e0a569}
+.modal-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.send-row{display:flex;gap:10px;align-items:center}
+.send-row input{flex:1}
+
+/* mobile */
+.mobile-bar{display:none}
+@media (max-width:860px){
+  html,body{height:auto}
+  body{overflow:visible;min-height:100vh}
+  main{flex-direction:column}
+  .editor{flex:none;border-right:0;border-bottom:1px solid var(--line)}
+  #input{height:42vh;flex:none}
+  .preview-scroll{overflow:visible;flex:none}
+  .divider{display:none}
+  .sub{display:none}
+  .md{padding:20px 18px 44px}
+  .fgrid,.modal-grid{grid-template-columns:1fr}
+  .field-row{grid-template-columns:1fr 1fr}
+  .field-row label.row{justify-content:center}
+  .mobile-bar{display:flex;border-bottom:1px solid var(--line);flex:none}
+  .mobile-bar button{flex:1;padding:9px;background:none;border:0;border-bottom:2px solid transparent;font:500 12px var(--mono);color:var(--muted)}
+  .mobile-bar button.on{color:var(--text);border-bottom-color:var(--green)}
+  body.m-write #previewPane{display:none}
+  body.m-preview .editor{display:none}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="brand"><span class="tick">&gt;</span>sendmd<span class="ver">v0.4</span></div>
+  <span class="sub">markdown editor with a discord preview</span>
+  <div class="top-right">
+    <span id="savedFlag">saved</span>
+    <span class="priv">everything stays in this tab</span>
+  </div>
+</header>
+
+<div class="mobile-bar">
+  <button id="mWrite" class="on">write</button>
+  <button id="mPreview">preview</button>
+</div>
+
+<main>
+  <section class="pane editor" id="editorPane">
+    <div class="toolbar" id="toolbar">
+      <button data-w="**" title="bold — ctrl+B"><b>B</b></button>
+      <button data-w="*" title="italic — ctrl+I"><i>i</i></button>
+      <button data-w="__" data-donly hidden title="underline — Discord only"><u>U</u></button>
+      <button data-w="~~" title="strikethrough"><s>S</s></button>
+      <button data-w="||" data-donly hidden title="spoiler — Discord only">||</button>
+      <span class="sep"></span>
+      <button data-w="`" title="inline code">&lt;/&gt;</button>
+      <button id="fenceBtn" title="code block">```</button>
+      <button data-p="> " title="quote">&gt;</button>
+      <button data-p="- " title="bullet list">•</button>
+      <span class="sep"></span>
+      <button id="linkBtn" title="link">link</button>
+    </div>
+    <textarea id="input" spellcheck="false" placeholder="Type markdown here — Discord mode is one tab over.">
+# sendmd — release notes 0.4
+
+Markdown on the left, preview on the right. Flip over to the **Discord** tab to see what actually survives a webhook.
+
+## What Discord keeps
+- **bold**, *italic*, __underline__, ~~strikethrough~~
+- spoilers — ||click to reveal||
+- `inline code`, fenced blocks, quotes, lists, links
+
+## What it blocks
+Discord has no headings. Those `#` lines up top land with the hashes still attached — the notice bar offers to turn them bold in one click.
+
+> Quotes work, but only the plain single-level kind.
+
+Link check: [webhook docs](https://discord.com/developers/docs/resources/webhook)</textarea>
+    <div class="statusbar">
+      <span id="counts"></span>
+      <span id="limit"></span>
+    </div>
+  </section>
+
+  <div class="divider" id="divider" title="drag to resize"></div>
+
+  <section class="pane preview" id="previewPane">
+    <div class="pane-head">
+      <div class="tabs">
+        <button id="tabText" class="tab">Text</button>
+        <button id="tabDiscord" class="tab">Discord</button>
+      </div>
+      <div class="subtabs" id="subtabs" hidden>
+        <button id="subMessage" class="tab">Message</button>
+        <button id="subEmbed" class="tab">Embed</button>
+      </div>
+      <button id="jsonBtn" class="ghost" hidden>Webhook JSON</button>
+    </div>
+
+    <div class="preview-scroll" id="previewScroll">
+      <div id="standardOut" class="md"></div>
+
+      <div id="discordWrap" hidden>
+        <div class="notice" id="blockedNotice" hidden>
+          <span id="blockedText"></span>
+          <button id="fixHeadings">turn them bold</button>
+        </div>
+
+        <div class="chan">
+          <span class="hash">#</span>sendmd-playground
+          <span class="chan-desc">— what your text looks like when it lands</span>
+        </div>
+
+        <div class="chat" id="chatArea"></div>
+
+        <div class="builder" id="builder" hidden>
+          <div class="builder-head">
+            embed settings
+            <button id="resetEmbed" class="linky">reset</button>
+          </div>
+          <div class="fgrid">
+            <label>author<input id="eAuthor"></label>
+            <label>title<input id="eTitle"></label>
+            <label class="wide">description
+              <button id="pullDesc" class="linky" type="button">pull from editor</button>
+              <textarea id="eDesc" rows="3"></textarea>
+            </label>
+            <label class="row">color
+              <input type="color" id="eColor" value="#5865f2">
+              <code id="eColorHex">#5865f2</code>
+            </label>
+            <label class="row"><input type="checkbox" id="eStamp"> timestamp in footer</label>
+            <label>image url<input id="eImage" placeholder="https://…"></label>
+            <label>thumbnail url<input id="eThumb" placeholder="https://…"></label>
+            <label>footer text<input id="eFooter"></label>
+            <label>content<input id="eContent" placeholder="message text above the embed"></label>
+          </div>
+          <div class="fields-head">
+            fields
+            <button id="addField" class="ghost" type="button">+ add field</button>
+          </div>
+          <div id="fieldList"></div>
+          <p class="hint">Empty boxes get left out of the payload. Field names and values take the same markdown as chat.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<dialog id="jsonModal">
+  <div class="modal-head">
+    webhook payload
+    <button id="closeModal" class="ghost">close</button>
+  </div>
+  <div class="modal-body">
+    <pre id="jsonOut"></pre>
+    <div class="send-row">
+      <button id="copyJson" class="btn">Copy JSON</button>
+      <span class="hint">POST it yourself, or let me do it below.</span>
+    </div>
+    <div class="modal-grid">
+      <label>username override<input id="botName" value="sendmd"></label>
+      <label>avatar url<input id="avatarUrl" placeholder="optional https://…"></label>
+    </div>
+    <label>webhook url<input id="hookUrl" placeholder="https://discord.com/api/webhooks/…"></label>
+    <div class="send-row">
+      <button id="sendBtn" class="btn primary">Send test</button>
+      <span id="sendStatus" class="hint"></span>
+    </div>
+    <p class="hint">The webhook URL is only held in this browser and used for that one POST — nothing else touches it.</p>
+  </div>
+</dialog>
+
+<script>
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+
+const ta = $('#input');
+const editorPane = $('#editorPane');
+const state = { mode: 'discord', view: 'message' };
+let ready = false;
+
+
+function esc(s){
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function inline(src, mode){
+  const vault = [];
+  const keep = html => { vault.push(html); return '\x00' + (vault.length - 1) + '\x00'; };
+  let s = esc(src);
+
+  s = s.replace(/`([^`\n]+)`/g, (m,c) => keep('<code>'+c+'</code>'));
+
+  if(mode === 'discord')
+    s = s.replace(/\|\|([^|]+)\|\|/g, (m,c) => keep('<span class="spoiler">'+c+'</span>'));
+
+  s = s.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (m,alt,u) => {
+    if(!/^https?:/i.test(u)) return m;
+    if(mode === 'discord') return '<a href="'+u+'" target="_blank" rel="noopener">'+(alt||u)+'</a>';
+    return keep('<img src="'+u+'" alt="'+alt+'" loading="lazy">');
+  });
+
+  s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m,t,u) => {
+    if(!/^(https?:|mailto:)/i.test(u)) return m;
+    return keep('<a href="'+u+'" target="_blank" rel="noopener">'+t+'</a>');
+  });
+
+  if(mode === 'discord')
+    s = s.replace(/(^|[\s(])(https?:\/\/[^\s<>()]+[^\s<>().,!?;:'"])/g,
+      (m,p,u) => p + keep('<a href="'+u+'" target="_blank" rel="noopener">'+u+'</a>'));
+
+  s = s.replace(/\*\*\*([^*]+)\*\*\*/g,'<strong><em>$1</em></strong>')
+       .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
+       .replace(/\*([^*\n]+)\*/g,'<em>$1</em>');
+
+  s = s.replace(/__([^_]+)__/g, mode === 'discord' ? '<u>$1</u>' : '<strong>$1</strong>')
+       .replace(/(^|\s)_([^_\n]+)_(?=\s|[.,!?;:]|$)/g,'$1<em>$2</em>')
+       .replace(/~~([^~]+)~~/g,'<del>$1</del>');
+
+  return s.replace(/\x00(\d+)\x00/g, (m,i) => vault[i]);
+}
+
+const BREAK = /^(#{1,6}\s|```|\s*>|\s*[-*]\s|\s*\d+[.)]\s|\s*(-{3,}|\*{3,})\s*$)/;
+
+function blocks(src, mode){
+  const lines = src.replace(/\r\n?/g,'\n').split('\n');
+  const out = [];
+  let i = 0;
+
+  while(i < lines.length){
+    const line = lines[i];
+
+    if(/^\s*$/.test(line)){ i++; continue; }
+
+    const fence = line.match(/^\s*```(\w*)\s*$/);
+    if(fence){
+      const buf = [];
+      i++;
+      while(i < lines.length && !/^\s*```\s*$/.test(lines[i])) buf.push(lines[i++]);
+      i++;
+      out.push('<pre><code>' + esc(buf.join('\n')) + '</code></pre>');
+      continue;
+    }
+
+    const head = line.match(/^(#{1,6})\s+(.*)$/);
+    if(head){
+      if(mode === 'discord'){
+        out.push(`<div class="dl-blocked"><span class="hashes">${head[1]}</span> ${inline(head[2],mode)}` +
+          `<span class="flag" title="Discord prints headings as plain text, hashes included">won't render</span></div>`);
+      } else {
+        const n = head[1].length;
+        out.push('<h'+n+'>' + inline(head[2],mode) + '</h'+n+'>');
+      }
+      i++; continue;
+    }
+
+    if(/^\s*(-{3,}|\*{3,})\s*$/.test(line)){ out.push('<hr>'); i++; continue; }
+
+    if(/^\s*>/.test(line)){
+      const buf = [];
+      while(i < lines.length && /^\s*>/.test(lines[i])) buf.push(lines[i++].replace(/^\s*>\s?/,''));
+      out.push('<blockquote>' + buf.map(l => inline(l,mode)).join('<br>') + '</blockquote>');
+      continue;
+    }
+
+    const isUl = /^\s*[-*]\s+/.test(line);
+    const isOl = /^\s*\d+[.)]\s+/.test(line);
+    if(isUl || isOl){
+      const re = isUl ? /^\s*[-*]\s+(.*)$/ : /^\s*\d+[.)]\s+(.*)$/;
+      const items = [];
+      while(i < lines.length){
+        const m = lines[i].match(re);
+        if(!m) break;
+        items.push('<li>' + inline(m[1],mode) + '</li>');
+        i++;
+      }
+      out.push((isUl?'<ul>':'<ol>') + items.join('') + (isUl?'</ul>':'</ol>'));
+      continue;
+    }
+
+    const buf = [line];
+    i++;
+    while(i < lines.length && !/^\s*$/.test(lines[i]) && !BREAK.test(lines[i])) buf.push(lines[i++]);
+    out.push('<p>' + buf.map(l => inline(l,mode)).join('<br>') + '</p>');
+  }
+  return out.join('\n');
+}
+
+
+const AVATAR_COLORS = ['#5865f2','#3ba55d','#faa61a','#eb459e','#00a8fc','#e67d22'];
+
+function avatarColor(name){
+  let h = 0;
+  for(const ch of name) h = (h*31 + ch.charCodeAt(0)) % 997;
+  return AVATAR_COLORS[h % AVATAR_COLORS.length];
+}
+
+function clock(d){
+  let h = d.getHours();
+  const ap = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return 'Today at ' + h + ':' + String(d.getMinutes()).padStart(2,'0') + ' ' + ap;
+}
+
+function builderVals(){
+  return {
+    content: $('#eContent').value.trim(),
+    author:  $('#eAuthor').value.trim(),
+    title:   $('#eTitle').value.trim(),
+    desc:    $('#eDesc').value.trim(),
+    color:   $('#eColor').value,
+    stamp:   $('#eStamp').checked,
+    image:   $('#eImage').value.trim(),
+    thumb:   $('#eThumb').value.trim(),
+    footer:  $('#eFooter').value.trim(),
+    fields:  [...$$('.field-row')].map(r => ({
+      name: r.querySelector('.f-name').value.trim(),
+      value: r.querySelector('.f-value').value.trim(),
+      inline: r.querySelector('.f-inline').checked
+    })).filter(f => f.name || f.value)
+  };
+}
+
+function embedHtml(now){
+  const v = builderVals();
+  const bare = !v.author && !v.title && !v.desc && !v.image && !v.footer && !v.fields.length;
+  if(bare) return '<div class="embed-missing">fill in the embed settings below and it renders here</div>';
+
+  let h = `<div class="embed" style="border-left-color:${v.color}"><div class="embed-main">`;
+  if(v.author) h += `<div class="embed-author">${inline(v.author,'discord')}</div>`;
+  if(v.title)  h += `<div class="embed-title">${inline(v.title,'discord')}</div>`;
+  if(v.desc)   h += `<div class="embed-desc dmd">${blocks(v.desc,'discord')}</div>`;
+  if(v.fields.length){
+    h += '<div class="embed-fields">' + v.fields.map(f =>
+      `<div class="ef${f.inline ? ' inline' : ''}"><div class="ef-name">${inline(f.name,'discord') || '\u200b'}</div>` +
+      `<div class="ef-value">${inline(f.value,'discord') || '\u200b'}</div></div>`
+    ).join('') + '</div>';
+  }
+  if(v.image) h += `<img class="embed-img" src="${esc(v.image)}" alt="">`;
+  if(v.footer || v.stamp)
+    h += `<div class="embed-foot">${v.footer ? inline(v.footer,'discord') : ''}` +
+         `${v.footer && v.stamp ? ' · ' : ''}${v.stamp ? clock(now) : ''}</div>`;
+  h += '</div>';
+  if(v.thumb) h += `<img class="embed-thumb" src="${esc(v.thumb)}" alt="">`;
+  return h + '</div>';
+}
+
+function renderChat(){
+  const name = $('#botName').value.trim() || 'sendmd';
+  const av = $('#avatarUrl').value.trim();
+  const avatar = av
+    ? `<img class="avatar" src="${esc(av)}" alt="">`
+    : `<div class="avatar" style="background:${avatarColor(name)}">${esc(name[0].toUpperCase())}</div>`;
+
+  const src = state.view === 'embed' ? $('#eContent').value : ta.value;
+  const body = blocks(src, 'discord');
+  const fallback = body ? '' :
+    (state.view === 'message' ? '<span class="msg-empty">start typing on the left and it lands here</span>' : '');
+
+  $('#chatArea').innerHTML =
+    `<div class="msg">${avatar}<div class="msg-body">` +
+    `<div class="msg-head"><span class="msg-name">${esc(name)}</span><span class="bot-tag">BOT</span>` +
+    `<span class="msg-time">${clock(new Date())}</span></div>` +
+    `<div class="msg-text dmd">${body || fallback}</div>` +
+    (state.view === 'embed' ? embedHtml(new Date()) : '') +
+    `</div></div>`;
+}
+
+function softRefresh(){
+  if(state.mode === 'discord') renderChat();
+}
+
+
+function render(){
+  if(state.mode === 'text'){
+    $('#standardOut').innerHTML = blocks(ta.value, 'text');
+  } else {
+    renderChat();
+    updateNotice();
+  }
+  updateCounts();
+}
+
+function updateCounts(){
+  const t = ta.value;
+  const words = (t.trim().match(/\S+/g) || []).length;
+  $('#counts').textContent = words + (words === 1 ? ' word' : ' words') + ' · ' + t.length + ' chars';
+  const lim = $('#limit');
+  if(state.mode === 'discord' && state.view === 'message'){
+    lim.textContent = t.length + ' / 2000';
+    lim.className = t.length > 2000 ? 'over' : t.length > 1800 ? 'warn' : '';
+  } else {
+    lim.textContent = '';
+    lim.className = '';
+  }
+}
+
+function updateNotice(){
+  const n = (ta.value.match(/^\s*#{1,6}\s+\S/gm) || []).length;
+  const bar = $('#blockedNotice');
+  if(state.mode === 'discord' && state.view === 'message' && n){
+    $('#blockedText').textContent = n === 1
+      ? "Discord doesn't render # headings — this one lands exactly as typed, hashes and all."
+      : "Discord doesn't render # headings — these " + n + " land exactly as typed, hashes and all.";
+    bar.hidden = false;
+  } else bar.hidden = true;
+}
+
+
+function setMode(m){
+  state.mode = m;
+  $('#tabText').classList.toggle('on', m === 'text');
+  $('#tabDiscord').classList.toggle('on', m === 'discord');
+  $('#standardOut').hidden = m !== 'text';
+  $('#discordWrap').hidden = m !== 'discord';
+  $('#subtabs').hidden = m !== 'discord';
+  $('#jsonBtn').hidden = m !== 'discord';
+  $$('[data-donly]').forEach(b => b.hidden = m !== 'discord');
+  render();
+  saveSoon();
+}
+
+function setView(v){
+  state.view = v;
+  $('#subMessage').classList.toggle('on', v === 'message');
+  $('#subEmbed').classList.toggle('on', v === 'embed');
+  $('#builder').hidden = v !== 'embed';
+  render();
+  saveSoon();
+}
+
+ $('#tabText').addEventListener('click', () => setMode('text'));
+ $('#tabDiscord').addEventListener('click', () => setMode('discord'));
+ $('#subMessage').addEventListener('click', () => setView('message'));
+ $('#subEmbed').addEventListener('click', () => setView('embed'));
+
+ $('#fixHeadings').addEventListener('click', () => {
+  ta.value = ta.value.replace(/^(\s*)#{1,6}\s+(.*)$/gm, '$1**$2**');
+  render();
+  saveSoon();
+});
+
+ $('#previewScroll').addEventListener('click', e => {
+  const sp = e.target.closest('.spoiler');
+  if(sp) sp.classList.toggle('open');
+});
+
+
+function afterEdit(){
+  render();
+  saveSoon();
+}
+
+function wrap(mark){
+  const s = ta.selectionStart, e = ta.selectionEnd, v = ta.value;
+  const sel = v.slice(s, e) || 'text';
+  if(v.slice(s - mark.length, s) === mark && v.slice(e, e + mark.length) === mark){
+    ta.value = v.slice(0, s - mark.length) + sel + v.slice(e + mark.length);
+    ta.setSelectionRange(s - mark.length, e - mark.length);
+  } else {
+    ta.value = v.slice(0, s) + mark + sel + mark + v.slice(e);
+    ta.setSelectionRange(s + mark.length, s + mark.length + sel.length);
+  }
+  ta.focus();
+  afterEdit();
+}
+
+function prefixLines(pre){
+  const s = ta.selectionStart, e = ta.selectionEnd, v = ta.value;
+  const ls = v.lastIndexOf('\n', s - 1) + 1;
+  let le = v.indexOf('\n', e);
+  if(le === -1) le = v.length;
+  const lines = v.slice(ls, le).split('\n');
+  const all = lines.every(l => l.startsWith(pre));
+  const out = lines.map(l => all ? l.slice(pre.length) : pre + l).join('\n');
+  ta.value = v.slice(0, ls) + out + v.slice(le);
+  ta.setSelectionRange(ls, ls + out.length);
+  ta.focus();
+  afterEdit();
+}
+
+function fenceBlock(){
+  const s = ta.selectionStart, e = ta.selectionEnd, v = ta.value;
+  const sel = v.slice(s, e) || 'code';
+  const ins = '\n```\n' + sel + '\n```\n';
+  ta.value = v.slice(0, s) + ins + v.slice(e);
+  const pos = s + 5 + sel.length;
+  ta.setSelectionRange(pos, pos);
+  ta.focus();
+  afterEdit();
+}
+
+function insertLink(){
+  const s = ta.selectionStart, e = ta.selectionEnd, v = ta.value;
+  const label = v.slice(s, e) || 'text';
+  const ins = '[' + label + '](https://)';
+  ta.value = v.slice(0, s) + ins + v.slice(e);
+  const a = s + label.length + 3;
+  ta.setSelectionRange(a, s + ins.length - 1);
+  ta.focus();
+  afterEdit();
+}
+
+ $('#toolbar').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if(!b) return;
+  if(b.dataset.w) wrap(b.dataset.w);
+  else if(b.dataset.p) prefixLines(b.dataset.p);
+  else if(b.id === 'fenceBtn') fenceBlock();
+  else if(b.id === 'linkBtn') insertLink();
+});
+
+function continueList(e){
+  const s = ta.selectionStart;
+  if(s !== ta.selectionEnd) return;
+  const v = ta.value;
+  const ls = v.lastIndexOf('\n', s - 1) + 1;
+  const m = v.slice(ls, s).match(/^(\s*)([-*]|\d+[.)])\s+(.+)$/);
+  if(!m) return;
+  e.preventDefault();
+  let mark = m[2];
+  if(/^\d/.test(mark)) mark = (parseInt(mark,10) + 1) + mark.slice(-1);
+  const ins = '\n' + m[1] + mark + ' ';
+  ta.value = v.slice(0, s) + ins + v.slice(s);
+  ta.setSelectionRange(s + ins.length, s + ins.length);
+  afterEdit();
+}
+
+ta.addEventListener('keydown', e => {
+  if(e.key === 'Tab'){
+    e.preventDefault();
+    const s = ta.selectionStart, en = ta.selectionEnd;
+    ta.value = ta.value.slice(0, s) + '  ' + ta.value.slice(en);
+    ta.setSelectionRange(s + 2, s + 2);
+    ta.focus();
+    afterEdit();
+  } else if((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b'){
+    e.preventDefault(); wrap('**');
+  } else if((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'i'){
+    e.preventDefault(); wrap('*');
+  } else if(e.key === 'Enter' && !e.shiftKey){
+    continueList(e);
+  }
+});
+
+ta.addEventListener('input', afterEdit);
+
+
+function addFieldRow(f){
+  const row = document.createElement('div');
+  row.className = 'field-row';
+  row.innerHTML =
+    '<input class="f-name" placeholder="name">' +
+    '<input class="f-value" placeholder="value">' +
+    '<label class="row"><input type="checkbox" class="f-inline">inline</label>' +
+    '<button class="f-del" title="remove field" type="button">×</button>';
+  if(f){
+    row.querySelector('.f-name').value = f.name || '';
+    row.querySelector('.f-value').value = f.value || '';
+    row.querySelector('.f-inline').checked = !!f.inline;
+  }
+  $('#fieldList').appendChild(row);
+}
+
+ $('#addField').addEventListener('click', () => {
+  if($$('.field-row').length >= 25) return;
+  addFieldRow();
+  softRefresh();
+  saveSoon();
+});
+
+ $('#fieldList').addEventListener('input', () => { softRefresh(); saveSoon(); });
+ $('#fieldList').addEventListener('click', e => {
+  const del = e.target.closest('.f-del');
+  if(del){
+    del.closest('.field-row').remove();
+    softRefresh();
+    saveSoon();
+  }
+});
+
+ $('#builder').addEventListener('input', e => {
+  if(e.target.id === 'eColor') $('#eColorHex').textContent = e.target.value;
+  softRefresh();
+  saveSoon();
+});
+
+ $('#pullDesc').addEventListener('click', () => {
+  $('#eDesc').value = ta.value;
+  softRefresh();
+  saveSoon();
+});
+
+ $('#resetEmbed').addEventListener('click', () => {
+  ['eAuthor','eTitle','eDesc','eImage','eThumb','eFooter','eContent'].forEach(id => $('#'+id).value = '');
+  $('#eStamp').checked = false;
+  $('#eColor').value = '#5865f2';
+  $('#eColorHex').textContent = '#5865f2';
+  $('#fieldList').innerHTML = '';
+  addFieldRow();
+  softRefresh();
+  saveSoon();
+});
+
+
+function buildPayload(){
+  const p = {};
+  const name = $('#botName').value.trim();
+  const av = $('#avatarUrl').value.trim();
+  if(name) p.username = name;
+  if(av) p.avatar_url = av;
+
+  if(state.view === 'embed'){
+    const v = builderVals();
+    if(v.content) p.content = v.content;
+    const em = { color: parseInt(v.color.slice(1), 16) };
+    if(v.title) em.title = v.title;
+    if(v.desc) em.description = v.desc;
+    if(v.author) em.author = { name: v.author };
+    if(v.image) em.image = { url: v.image };
+    if(v.thumb) em.thumbnail = { url: v.thumb };
+    if(v.footer) em.footer = { text: v.footer };
+    if(v.stamp) em.timestamp = new Date().toISOString();
+    if(v.fields.length)
+      em.fields = v.fields.map(f => ({ name: f.name || '\u200b', value: f.value || '\u200b', inline: f.inline }));
+    p.embeds = [em];
+  } else {
+    const c = ta.value.replace(/\s+$/, '');
+    if(c) p.content = c;
+  }
+  return p;
+}
+
+function paintJson(){
+  let raw = JSON.stringify(buildPayload(), null, 2)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  raw = raw
+    .replace(/"([^"]+)":/g, '<span class="jk">"$1"</span>:')
+    .replace(/: "((?:[^"\\]|\\.)*)"/g, ': <span class="js">"$1"</span>')
+    .replace(/: (-?\d+)/g, ': <span class="jn">$1</span>');
+  $('#jsonOut').innerHTML = raw;
+}
+
+ $('#jsonBtn').addEventListener('click', () => {
+  paintJson();
+  $('#jsonModal').showModal();
+});
+ $('#closeModal').addEventListener('click', () => $('#jsonModal').close());
+ $('#jsonModal').addEventListener('click', e => {
+  if(e.target === e.currentTarget) e.currentTarget.close();
+});
+
+ $('#copyJson').addEventListener('click', async () => {
+  const txt = JSON.stringify(buildPayload(), null, 2);
+  let ok = true;
+  try {
+    await navigator.clipboard.writeText(txt);
+  } catch(err) {
+    const tmp = document.createElement('textarea');
+    tmp.value = txt;
+    document.body.appendChild(tmp);
+    tmp.select();
+    ok = document.execCommand('copy');
+    tmp.remove();
+  }
+  const btn = $('#copyJson');
+  btn.textContent = ok ? 'Copied' : 'Copy failed';
+  setTimeout(() => btn.textContent = 'Copy JSON', 1300);
+});
+
+ $('#sendBtn').addEventListener('click', async () => {
+  const url = $('#hookUrl').value.trim();
+  const st = $('#sendStatus');
+  if(!/^https:\/\/(canary\.|ptb\.)?(discord|discordapp)\.com\/api\/webhooks\//.test(url)){
+    st.textContent = "That doesn't look like a Discord webhook URL.";
+    st.className = 'hint err';
+    return;
+  }
+  st.textContent = 'Sending…';
+  st.className = 'hint';
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(buildPayload())
+    });
+    if(r.ok){
+      st.textContent = 'Delivered — check the channel.';
+      st.className = 'hint ok';
+    } else {
+      st.textContent = 'HTTP ' + r.status + ' — Discord refused it (empty field names are a usual suspect).';
+      st.className = 'hint err';
+    }
+  } catch(err) {
+    st.textContent = 'Request blocked (network or CORS). Copy the JSON instead.';
+    st.className = 'hint err';
+  }
+});
+
+['botName','avatarUrl'].forEach(id =>
+  $('#'+id).addEventListener('input', () => { softRefresh(); saveSoon(); })
+);
+
+
+function store(k, v){
+  try { localStorage.setItem('sendmd.' + k, v); } catch(e) {}
+}
+function read(k){
+  try { return localStorage.getItem('sendmd.' + k); } catch(e) { return null; }
+}
+
+let saveTimer;
+function saveSoon(){
+  if(!ready) return;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    store('text', ta.value);
+    store('builder', JSON.stringify(builderData()));
+    store('botName', $('#botName').value);
+    store('avatarUrl', $('#avatarUrl').value);
+    store('hookUrl', $('#hookUrl').value);
+    store('mode', state.mode + ' ' + state.view);
+    const f = $('#savedFlag');
+    f.classList.add('show');
+    clearTimeout(f._t);
+    f._t = setTimeout(() => f.classList.remove('show'), 1400);
+  }, 600);
+}
+
+function builderData(){
+  const d = {};
+  ['eAuthor','eTitle','eDesc','eImage','eThumb','eFooter','eContent'].forEach(id => d[id] = $('#'+id).value);
+  d.eColor = $('#eColor').value;
+  d.eStamp = $('#eStamp').checked;
+  d.fields = [...$$('.field-row')].map(r => ({
+    name: r.querySelector('.f-name').value,
+    value: r.querySelector('.f-value').value,
+    inline: r.querySelector('.f-inline').checked
+  }));
+  return d;
+}
+
+function restoreBuilder(d){
+  if(!d) return;
+  ['eAuthor','eTitle','eDesc','eImage','eThumb','eFooter','eContent'].forEach(id => {
+    if(typeof d[id] === 'string') $('#'+id).value = d[id];
+  });
+  if(d.eColor){ $('#eColor').value = d.eColor; $('#eColorHex').textContent = d.eColor; }
+  $('#eStamp').checked = !!d.eStamp;
+  $('#fieldList').innerHTML = '';
+  (d.fields && d.fields.length ? d.fields : [null]).forEach(addFieldRow);
+}
+
+
+let dragging = false;
+ $('#divider').addEventListener('mousedown', e => {
+  dragging = true;
+  $('#divider').classList.add('active');
+  document.body.style.userSelect = 'none';
+  e.preventDefault();
+});
+document.addEventListener('mousemove', e => {
+  if(!dragging) return;
+  const r = $('main').getBoundingClientRect();
+  const pct = Math.min(72, Math.max(24, (e.clientX - r.left) / r.width * 100));
+  editorPane.style.flexBasis = pct + '%';
+});
+document.addEventListener('mouseup', () => {
+  if(!dragging) return;
+  dragging = false;
+  $('#divider').classList.remove('active');
+  document.body.style.userSelect = '';
+  store('split', editorPane.style.flexBasis);
+});
+
+
+const mq = matchMedia('(max-width: 860px)');
+function setMobile(w){
+  document.body.classList.toggle('m-write', w === 'write');
+  document.body.classList.toggle('m-preview', w === 'preview');
+  $('#mWrite').classList.toggle('on', w === 'write');
+  $('#mPreview').classList.toggle('on', w === 'preview');
+}
+ $('#mWrite').addEventListener('click', () => setMobile('write'));
+ $('#mPreview').addEventListener('click', () => setMobile('preview'));
+mq.addEventListener('change', e => {
+  editorPane.style.flexBasis = '';
+  if(e.matches) setMobile('write');
+  else document.body.classList.remove('m-write','m-preview');
+});
+
+(function init(){
+  const saved = read('text');
+  if(saved !== null) ta.value = saved;
+
+  try { restoreBuilder(JSON.parse(read('builder'))); } catch(e) {}
+  if(!$$('.field-row').length) addFieldRow();
+
+  const bn = read('botName');   if(bn !== null) $('#botName').value = bn;
+  const au = read('avatarUrl'); if(au !== null) $('#avatarUrl').value = au;
+  const hu = read('hookUrl');   if(hu !== null) $('#hookUrl').value = hu;
+
+  const parts = (read('mode') || 'discord message').split(' ');
+  setMode(parts[0] === 'text' ? 'text' : 'discord');
+  setView(parts[1] === 'embed' ? 'embed' : 'message');
+
+  if(mq.matches) setMobile('write');
+  else {
+    const sp = read('split');
+    if(sp) editorPane.style.flexBasis = sp;
+  }
+
+  ready = true;
+})();
+</script>
+</body>
+</html>
