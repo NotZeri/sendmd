@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>sendmd — markdown editor with a discord preview</title>
+<title>sendmd - Make Markdown Easy</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231b1d21'/%3E%3Ctext x='16' y='23' font-family='monospace' font-size='20' font-weight='700' text-anchor='middle' fill='%233ba55d'%3E%23%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -173,26 +173,22 @@ dialog::backdrop{background:rgba(10,11,13,.6)}
 .send-row{display:flex;gap:10px;align-items:center}
 .send-row input{flex:1}
 
-/* mobile */
+/* mobile for ya'll weirdos */
 .mobile-bar{display:none}
+@media (min-width:861px){
+  html,body{height:100%;overflow:hidden}
+  body{display:flex;flex-direction:column}
+  main{flex:1 1 0;display:flex;flex-direction:row;min-height:0;width:100%}
+  .pane{display:flex;flex-direction:column;min-width:0;min-height:0}
+  .editor{flex:0 0 46%}
+  #previewPane{flex:1 1 0}
+  .divider{flex:0 0 5px}
+  #input{flex:1 1 auto;height:auto;min-height:240px}
+  .preview-scroll{flex:1 1 auto;min-height:0}
+}
 @media (max-width:860px){
-  html,body{height:auto}
-  body{overflow:visible;min-height:100vh}
-  main{flex-direction:column}
-  .editor{flex:none;border-right:0;border-bottom:1px solid var(--line)}
-  #input{height:42vh;flex:none}
-  .preview-scroll{overflow:visible;flex:none}
-  .divider{display:none}
-  .sub{display:none}
-  .md{padding:20px 18px 44px}
-  .fgrid,.modal-grid{grid-template-columns:1fr}
-  .field-row{grid-template-columns:1fr 1fr}
-  .field-row label.row{justify-content:center}
-  .mobile-bar{display:flex;border-bottom:1px solid var(--line);flex:none}
-  .mobile-bar button{flex:1;padding:9px;background:none;border:0;border-bottom:2px solid transparent;font:500 12px var(--mono);color:var(--muted)}
-  .mobile-bar button.on{color:var(--text);border-bottom-color:var(--green)}
-  body.m-write #previewPane{display:none}
-  body.m-preview .editor{display:none}
+  .mobile-bar{display:flex}
+  #input{height:55vh}
 }
 </style>
 </head>
